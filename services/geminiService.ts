@@ -1,4 +1,4 @@
-import { GoogleGenAI, Part, Type } from "@google/genai";
+import { GoogleGenAI, Part, Type, Content, GenerateContentResponse, GroundingChunk } from "@google/genai";
 import { ApiKeyError } from '../utils/errors';
 
 type ProgressCallback = (attempt: number, maxAttempts: number) => void;
@@ -66,18 +66,14 @@ export const analyzeVideoWithFrames = async (
         }
     }
     
-    // If we've exited the loop due to failure, throw a user-friendly error.
     if (lastError) {
         const errorMessage = lastError.message.toLowerCase();
         if (errorMessage.includes("503") || errorMessage.includes("overloaded") || errorMessage.includes("unavailable")) {
-            // Provide a specific, user-friendly message for overload errors.
             throw new Error(`The AI model is currently overloaded. We tried several times without success. Please try again in a few moments.`);
         }
-        // For other errors, pass the message along.
         throw new Error(`Failed to get analysis from Gemini API: ${lastError.message}`);
     }
 
-    // This should not be reached, but is a fallback.
     throw new Error("An unknown error occurred while communicating with the Gemini API after all retries.");
 };
 
@@ -252,5 +248,97 @@ export const generateExerciseVideo = async (exerciseName: string, onProgress?: P
             throw new Error(`Failed during video generation process: ${e.message}`);
         }
         throw new Error("An unknown error occurred while generating the video.");
+    }
+}
+
+// New function for grounded Q&A
+export const getGroundedAnswer = async (
+    question: string
+): Promise<{ text: string; sources: GroundingChunk[] }> => {
+    if (!process.env.API_KEY) {
+        throw new Error("API_KEY environment variable is not set.");
+    }
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    
+    try {
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: `You are a helpful fitness and health expert. Provide a comprehensive and accurate answer to the following question: "${question}"`,
+            config: {
+                tools: [{ googleSearch: {} }],
+            },
+        });
+
+        const sources = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+        return { text: response.text, sources: sources };
+
+    } catch (e) {
+        console.error(`Error with grounded search:`, e);
+        const error = e instanceof Error ? e : new Error(String(e));
+        throw new Error(`Failed to get answer from Gemini API: ${error.message}`);
+    }
+};
+
+// New function for image analysis (Pose Checker)
+export const analyzePose = async (
+    prompt: string,
+    base64Image: string,
+    mimeType: string
+): Promise<string> => {
+    if (!process.env.API_KEY) {
+        throw new Error("API_KEY environment variable is not set.");
+    }
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
+    const imagePart: Part = {
+        inlineData: {
+            data: base64Image,
+            mimeType: mimeType
+        }
+    };
+
+    const textPart: Part = {
+        text: prompt
+    };
+
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: { parts: [textPart, imagePart] },
+        });
+        return response.text;
+    } catch (e) {
+        console.error(`Error analyzing pose:`, e);
+        const error = e instanceof Error ? e : new Error(String(e));
+        throw new Error(`Failed to analyze pose with Gemini API: ${error.message}`);
+    }
+};
+
+
+// New function for chat. It takes the history and sends it for a streaming response.
+export const getChatResponseStream = (
+    history: Content[]
+): Promise<AsyncGenerator<GenerateContentResponse>> => {
+     if (!process.env.API_KEY) {
+        throw new Error("API_KEY environment variable is not set.");
+    }
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    
+    const systemInstruction = "You are Reddy, a friendly and encouraging AI fitness coach. Your goal is to help users with their fitness questions, provide motivation, and offer safe, general advice. Do not provide medical advice. Keep your answers concise and easy to understand. Use Markdown for formatting if it helps clarity.";
+
+    try {
+        return ai.models.generateContentStream({
+            model: 'gemini-2.5-flash',
+            contents: history,
+            config: {
+                systemInstruction: systemInstruction,
+            }
+        });
+    } catch (e) {
+        console.error(`Error in chat stream:`, e);
+        const error = e instanceof Error ? e : new Error(String(e));
+        // This catch block might not be effective for async generator functions in this exact way,
+        // but the primary error handling will be in the component that consumes the stream.
+        throw new Error(`Failed to get chat response from Gemini API: ${error.message}`);
     }
 }

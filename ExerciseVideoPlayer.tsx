@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 
 interface ExerciseVideoPlayerProps {
   src: string;
@@ -24,6 +24,8 @@ const LoopIcon: React.FC<{ className?: string }> = ({ className }) => (
 export const ExerciseVideoPlayer: React.FC<ExerciseVideoPlayerProps> = ({ src }) => {
     const videoRef = useRef<HTMLVideoElement>(null);
     const progressRef = useRef<HTMLInputElement>(null);
+    const volumeIndicatorTimeoutRef = useRef<number | null>(null);
+
     const [isPlaying, setIsPlaying] = useState(false);
     const [progress, setProgress] = useState(0);
     const [volume, setVolume] = useState(1);
@@ -32,6 +34,17 @@ export const ExerciseVideoPlayer: React.FC<ExerciseVideoPlayerProps> = ({ src })
     const [isLooping, setIsLooping] = useState(true);
     const [duration, setDuration] = useState(0);
     const [currentTime, setCurrentTime] = useState(0);
+    const [showVolumeIndicator, setShowVolumeIndicator] = useState(false);
+
+    const triggerVolumeIndicator = () => {
+        if (volumeIndicatorTimeoutRef.current) {
+            clearTimeout(volumeIndicatorTimeoutRef.current);
+        }
+        setShowVolumeIndicator(true);
+        volumeIndicatorTimeoutRef.current = window.setTimeout(() => {
+            setShowVolumeIndicator(false);
+        }, 1200); // Show for 1.2 seconds
+    };
     
     const togglePlayPause = () => {
         if (videoRef.current) {
@@ -73,6 +86,9 @@ export const ExerciseVideoPlayer: React.FC<ExerciseVideoPlayerProps> = ({ src })
         return () => {
             video.removeEventListener('timeupdate', updateProgress);
             video.removeEventListener('loadedmetadata', setVideoDuration);
+             if (volumeIndicatorTimeoutRef.current) {
+                clearTimeout(volumeIndicatorTimeoutRef.current);
+            }
         };
     }, [src, isLooping]);
     
@@ -89,12 +105,14 @@ export const ExerciseVideoPlayer: React.FC<ExerciseVideoPlayerProps> = ({ src })
         if(videoRef.current) videoRef.current.volume = newVolume;
         setVolume(newVolume);
         setIsMuted(newVolume === 0);
+        triggerVolumeIndicator();
     };
 
     const toggleMute = () => {
         if(videoRef.current) {
             videoRef.current.muted = !isMuted;
             setIsMuted(!isMuted);
+            triggerVolumeIndicator();
         }
     };
 
@@ -130,12 +148,21 @@ export const ExerciseVideoPlayer: React.FC<ExerciseVideoPlayerProps> = ({ src })
                 <div></div>
 
                 {/* Center play/pause button */}
-                <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button onClick={togglePlayPause} className="text-white bg-black/50 rounded-full p-3">
+                <div className="absolute inset-0 flex items-center justify-center opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 transition-all duration-300 ease-in-out">
+                    <button onClick={togglePlayPause} className="text-white bg-black/60 rounded-full p-3 transform active:scale-90 transition-transform">
                          {isPlaying ? <PauseIcon className="w-8 h-8"/> : <PlayIcon className="w-8 h-8"/>}
                     </button>
                 </div>
-                
+                 
+                {/* Volume Change Indicator */}
+                <div className={`absolute inset-0 flex items-center justify-center pointer-events-none transition-all duration-500 ${showVolumeIndicator ? 'opacity-100 scale-100' : 'opacity-0 scale-125'}`}>
+                    <div className="bg-black/60 p-4 rounded-full">
+                        {isMuted || volume === 0 
+                            ? <VolumeOffIcon className="w-8 h-8 text-white"/> 
+                            : <VolumeHighIcon className="w-8 h-8 text-white"/>}
+                    </div>
+                </div>
+
                 {/* Bottom controls */}
                  <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-300">
                     <input
@@ -145,7 +172,7 @@ export const ExerciseVideoPlayer: React.FC<ExerciseVideoPlayerProps> = ({ src })
                         max="100"
                         value={isFinite(progress) ? progress : 0}
                         onChange={handleSeek}
-                        className="w-full h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer range-sm accent-purple-500"
+                        className="w-full h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer range-sm accent-amber-500"
                     />
                     <div className="flex items-center justify-between text-white text-xs mt-1">
                         <div className="flex items-center space-x-2">
@@ -156,12 +183,12 @@ export const ExerciseVideoPlayer: React.FC<ExerciseVideoPlayerProps> = ({ src })
                                 <button onClick={toggleMute}>
                                     {isMuted || volume === 0 ? <VolumeOffIcon className="w-5 h-5"/> : <VolumeHighIcon className="w-5 h-5"/>}
                                 </button>
-                                <input type="range" min="0" max="1" step="0.05" value={isMuted ? 0 : volume} onChange={handleVolumeChange} className="w-16 h-1 accent-purple-400 cursor-pointer"/>
+                                <input type="range" min="0" max="1" step="0.05" value={isMuted ? 0 : volume} onChange={handleVolumeChange} className="w-16 h-1 accent-amber-400 cursor-pointer"/>
                             </div>
                             <span className="font-mono">{formatTime(currentTime)} / {formatTime(duration)}</span>
                         </div>
                         <div className="flex items-center space-x-2">
-                            <button onClick={() => setIsLooping(!isLooping)} className={`${isLooping ? 'text-purple-400' : 'text-white'}`}>
+                            <button onClick={() => setIsLooping(!isLooping)} className={`${isLooping ? 'text-amber-400' : 'text-white'}`}>
                                 <LoopIcon className="w-5 h-5"/>
                             </button>
                             <select value={playbackRate} onChange={(e) => handlePlaybackRateChange(Number(e.target.value))} className="bg-transparent text-white border-none text-xs focus:ring-0">

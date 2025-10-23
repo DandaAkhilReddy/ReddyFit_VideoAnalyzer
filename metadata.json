@@ -1,5 +1,5 @@
 {
-  "name": "Gemini Video Analyzer Pro",
-  "description": "Upload a video and provide a prompt to receive a detailed analysis using Gemini 2.5 Pro's advanced video understanding and thinking capabilities.",
+  "name": "ReddyFit AI Pro",
+  "description": "An all-in-one AI fitness assistant. Analyze gym equipment from video, get a personalized workout plan, check your exercise form with image analysis, and get answers to your fitness questions.",
   "requestFramePermissions": []
 }

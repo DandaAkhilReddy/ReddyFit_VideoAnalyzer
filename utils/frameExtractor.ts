@@ -3,12 +3,14 @@
  * @param videoFile The video file to process.
  * @param frameCount The number of frames to extract.
  * @param durationSeconds The time duration from the start of the video to extract frames from.
+ * @param onProgress A callback function that receives the progress percentage (0-100).
  * @returns A promise that resolves with an array of base64-encoded image data URLs (JPEG).
  */
 export const extractFramesFromVideo = (
     videoFile: File,
-    frameCount: number = 8,
-    durationSeconds: number = 8
+    frameCount: number = 16,
+    durationSeconds: number = 16,
+    onProgress?: (progress: number) => void
 ): Promise<string[]> => {
     return new Promise((resolve, reject) => {
         const video = document.createElement('video');
@@ -35,7 +37,7 @@ export const extractFramesFromVideo = (
                     video.onseeked = () => {
                         try {
                             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                            frames.push(canvas.toDataURL('image/jpeg', 0.8));
+                            frames.push(canvas.toDataURL('image/jpeg', 0.85));
                             resolveFrame();
                         } catch (e) {
                             rejectFrame(e);
@@ -49,6 +51,7 @@ export const extractFramesFromVideo = (
                 for (let i = 0; i < frameCount; i++) {
                     // Seek to a point slightly after the interval to ensure the frame is ready
                     await captureFrame(i * interval + 0.01);
+                    onProgress?.(((i + 1) / frameCount) * 100);
                 }
                 URL.revokeObjectURL(video.src);
                 resolve(frames);
