@@ -1,5 +1,8 @@
 {
   "name": "ReddyFit AI Pro",
-  "description": "An all-in-one AI fitness assistant. Analyze gym equipment from video, get a personalized workout plan, check your exercise form with image analysis, and get answers to your fitness questions.",
-  "requestFramePermissions": []
+  "description": "An all-in-one AI fitness assistant. Analyze gym equipment from video, get a personalized workout plan, check your exercise form with image analysis, edit images with text prompts, and get answers to your fitness questions.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
 }

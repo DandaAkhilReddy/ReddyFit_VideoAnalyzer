@@ -1,6 +1,9 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import { ToastProvider } from './hooks/useToast';
+import { AuthProvider } from './hooks/useAuth';
+import { UserPreferencesProvider } from './hooks/useUserPreferences';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -10,6 +13,12 @@ if (!rootElement) {
 const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
-    <App />
+    <ToastProvider>
+      <AuthProvider>
+        <UserPreferencesProvider>
+          <App />
+        </UserPreferencesProvider>
+      </AuthProvider>
+    </ToastProvider>
   </React.StrictMode>
 );

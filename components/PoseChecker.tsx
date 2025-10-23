@@ -1,6 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import { analyzePose } from '../services/geminiService';
 import { fileToBase64, renderMarkdown } from '../utils/helpers';
+import { useToast } from '../hooks/useToast';
 import { Loader } from './shared/Loader';
 import { ErrorMessage } from './shared/ErrorMessage';
 import { ImageIcon } from './shared/icons';
@@ -15,6 +16,7 @@ export const PoseChecker: React.FC = () => {
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [lastFailedAction, setLastFailedAction] = useState<(() => void) | null>(null);
+    const { showToast } = useToast();
 
     const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
@@ -25,7 +27,7 @@ export const PoseChecker: React.FC = () => {
             setAnalysis(null);
             setLastFailedAction(null);
         } else {
-            setError("Please select a valid image file (JPEG, PNG, etc.).");
+            showToast("Please select a valid image file (JPEG, PNG, etc.).", "error");
             setImageFile(null);
             setImageUrl(null);
         }
@@ -47,13 +49,16 @@ export const PoseChecker: React.FC = () => {
             const fullPrompt = prompt ? `${DEFAULT_PROMPT}\n\nUser's question: "${prompt}"` : DEFAULT_PROMPT;
             const result = await analyzePose(fullPrompt, base64Image, imageFile.type);
             setAnalysis(result);
+            showToast("Pose analysis complete!", "success");
         } catch (e: any) {
-            setError(e.message || 'The AI coach could not analyze the pose. Please try again.');
-            setLastFailedAction(() => () => handleAnalyzeClick());
+            const errorMessage = e.message || 'The AI coach could not analyze the pose. Please check your image and connection, then try again.';
+            setError(errorMessage);
+            showToast(errorMessage, "error");
+            setLastFailedAction(() => handleAnalyzeClick);
         } finally {
             setIsLoading(false);
         }
-    }, [imageFile, prompt]);
+    }, [imageFile, prompt, showToast]);
 
     const handleRetry = () => {
         if (lastFailedAction) {

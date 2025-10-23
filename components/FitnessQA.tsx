@@ -1,10 +1,11 @@
 import React, { useState, useCallback } from 'react';
 import { getGroundedAnswer } from '../services/geminiService';
+import { useToast } from '../hooks/useToast';
 import { Loader } from './shared/Loader';
 import { ErrorMessage } from './shared/ErrorMessage';
 import { SparklesIcon } from './shared/icons';
 import { GroundingChunk } from '@google/genai';
-import { renderMarkdown } from '../utils/helpers';
+import { SearchResults } from './SearchResults';
 
 
 interface Answer {
@@ -17,6 +18,7 @@ export const FitnessQA: React.FC = () => {
     const [answer, setAnswer] = useState<Answer | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const { showToast } = useToast();
 
     const executeSearch = useCallback(async (query: string) => {
         if (!query.trim()) {
@@ -31,12 +33,15 @@ export const FitnessQA: React.FC = () => {
         try {
             const result = await getGroundedAnswer(query);
             setAnswer(result);
+            showToast("Answer found!", "success");
         } catch (e: any) {
-            setError(e.message || "There was a problem fetching the answer. Please try your question again.");
+            const errorMessage = e.message || "We couldn't fetch an answer. The search service may be temporarily unavailable. Please try again.";
+            setError(errorMessage);
+            showToast(errorMessage, "error");
         } finally {
             setIsLoading(false);
         }
-    }, []);
+    }, [showToast]);
     
     const handleSearch = (e: React.FormEvent) => {
         e.preventDefault();
@@ -95,27 +100,7 @@ export const FitnessQA: React.FC = () => {
             {isLoading && <Loader text="Searching for answers..." subtext="Consulting the latest information to give you an accurate response." />}
 
             {answer && !isLoading && (
-                <div className="bg-slate-800 rounded-lg p-6 border border-slate-700 space-y-6">
-                    <div className="prose prose-invert max-w-none">
-                        <h3 className="text-xl font-semibold bg-clip-text text-transparent bg-gradient-to-r from-amber-400 to-orange-500 not-prose">Answer:</h3>
-                        <div dangerouslySetInnerHTML={{ __html: renderMarkdown(answer.text) }} />
-                    </div>
-                    {answer.sources && answer.sources.length > 0 && (
-                        <div>
-                            <h4 className="font-semibold text-slate-300 mb-2">Sources:</h4>
-                            <ul className="space-y-2 text-sm">
-                                {answer.sources.map((source, index) => (
-                                    <li key={index} className="flex items-start gap-2">
-                                        <span className="text-amber-400 mt-1">&#8227;</span>
-                                        <a href={source.web?.uri} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">
-                                            {source.web?.title || source.web?.uri}
-                                        </a>
-                                    </li>
-                                ))}
-                            </ul>
-                        </div>
-                    )}
-                </div>
+                <SearchResults answer={answer.text} sources={answer.sources} />
             )}
         </section>
     );

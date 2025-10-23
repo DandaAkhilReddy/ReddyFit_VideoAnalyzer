@@ -1,18 +1,18 @@
 import { Content } from '@google/genai';
 import React, { useState, useRef, useEffect } from 'react';
 import { getChatResponseStream } from '../services/geminiService';
+import { useToast } from '../hooks/useToast';
 import { ErrorMessage } from './shared/ErrorMessage';
 import { SendIcon, LogoIcon } from './shared/icons';
 import { renderMarkdown } from '../utils/helpers';
 
 export const FitnessChat: React.FC = () => {
-    const [history, setHistory] = useState<Content[]>([
-        { role: 'model', parts: [{ text: "Hi! I'm Reddy, your AI fitness coach. How can I help you today?" }] }
-    ]);
+    const [history, setHistory] = useState<Content[]>([]);
     const [userInput, setUserInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const chatEndRef = useRef<HTMLDivElement>(null);
+    const { showToast } = useToast();
 
     const scrollToBottom = () => {
         chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -26,6 +26,7 @@ export const FitnessChat: React.FC = () => {
         try {
             const stream = await getChatResponseStream(currentHistory);
             let modelResponse = '';
+            // Add a placeholder message that the renderer will replace with a typing indicator
             setHistory(prev => [...prev, { role: 'model', parts: [{ text: '' }] }]);
 
             for await (const chunk of stream) {
@@ -37,10 +38,13 @@ export const FitnessChat: React.FC = () => {
                 });
             }
         } catch (err: any) {
-            setError(err.message || "Sorry, I couldn't get a response. Please check your connection and try again.");
-            // On error, remove the placeholder model message if one was added.
+            const errorMessage = err.message || "Sorry, I couldn't connect to the AI coach. Please check your connection and try again.";
+            setError(errorMessage);
+            showToast(errorMessage, "error");
+            // On error, remove the placeholder model message that was added.
             setHistory(prev => {
-                if (prev.length > 0 && prev[prev.length - 1].role === 'model' && prev[prev.length-1].parts[0].text === '') {
+                const lastMsg = prev[prev.length - 1];
+                if (lastMsg && lastMsg.role === 'model' && lastMsg.parts[0].text === '') {
                     return prev.slice(0, -1);
                 }
                 return prev;
@@ -63,8 +67,6 @@ export const FitnessChat: React.FC = () => {
     };
 
     const handleRetry = () => {
-        // The history already contains the user's message that failed to get a response.
-        // We just need to call the API again with the current history.
         if (history.length > 0 && history[history.length - 1].role === 'user') {
             fetchModelResponse(history);
         }
@@ -76,28 +78,44 @@ export const FitnessChat: React.FC = () => {
                 <h2 className="text-xl font-bold text-center bg-clip-text text-transparent bg-gradient-to-r from-amber-400 to-orange-500">Chat with Reddy</h2>
             </div>
             <div className="flex-1 p-4 overflow-y-auto space-y-6">
-                {history.map((msg, index) => (
-                    <div key={index} className={`flex items-end gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                        {msg.role === 'model' && <div className="w-8 h-8 bg-amber-500 rounded-full flex items-center justify-center flex-shrink-0"><LogoIcon className="w-5 h-5 text-slate-900" /></div>}
-                        <div className={`max-w-md lg:max-w-lg p-3 rounded-2xl ${
-                            msg.role === 'user' 
-                            ? 'bg-gradient-to-br from-amber-500 to-orange-600 text-white rounded-br-none' 
-                            : 'bg-slate-700 text-slate-200 rounded-bl-none'
-                        }`}>
-                            <div className="text-sm prose prose-invert max-w-none prose-p:my-2" dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.parts[0].text) }} />
-                        </div>
+                {/* Static Welcome Message */}
+                <div className="flex items-end gap-3 justify-start">
+                    <div className="w-8 h-8 bg-amber-500 rounded-full flex items-center justify-center flex-shrink-0"><LogoIcon className="w-5 h-5 text-slate-900" /></div>
+                    <div className="max-w-md lg:max-w-lg p-3 rounded-2xl bg-slate-700 text-slate-200 rounded-bl-none">
+                        <p className="text-sm">Hi! I'm Reddy, your AI fitness coach. How can I help you today?</p>
                     </div>
-                ))}
-                {isLoading && history[history.length-1].role === 'model' && (
-                    <div className="flex items-end gap-3 justify-start">
-                         <div className="w-8 h-8 bg-amber-500 rounded-full flex items-center justify-center flex-shrink-0"><LogoIcon className="w-5 h-5 text-slate-900" /></div>
-                        <div className="max-w-lg p-3 rounded-2xl rounded-bl-none bg-slate-700 flex items-center space-x-2">
-                           <span className="w-2 h-2 bg-amber-400 rounded-full animate-pulse delay-0"></span>
-                           <span className="w-2 h-2 bg-amber-400 rounded-full animate-pulse delay-150"></span>
-                           <span className="w-2 h-2 bg-amber-400 rounded-full animate-pulse delay-300"></span>
+                </div>
+
+                {history.map((msg, index) => {
+                    const isLastMessage = index === history.length - 1;
+                    const isEmptyModelMessage = msg.role === 'model' && msg.parts[0].text === '';
+
+                    if (isLoading && isLastMessage && isEmptyModelMessage) {
+                        return (
+                            <div key="typing-indicator" className="flex items-end gap-3 justify-start">
+                                <div className="w-8 h-8 bg-amber-500 rounded-full flex items-center justify-center flex-shrink-0"><LogoIcon className="w-5 h-5 text-slate-900" /></div>
+                                <div className="max-w-lg p-3 rounded-2xl rounded-bl-none bg-slate-700 flex items-center space-x-2">
+                                   <span className="w-2 h-2 bg-amber-400 rounded-full animate-pulse" style={{ animationDelay: '0s' }}></span>
+                                   <span className="w-2 h-2 bg-amber-400 rounded-full animate-pulse" style={{ animationDelay: '0.15s' }}></span>
+                                   <span className="w-2 h-2 bg-amber-400 rounded-full animate-pulse" style={{ animationDelay: '0.3s' }}></span>
+                                </div>
+                            </div>
+                        );
+                    }
+
+                    return (
+                        <div key={index} className={`flex items-end gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                            {msg.role === 'model' && <div className="w-8 h-8 bg-amber-500 rounded-full flex items-center justify-center flex-shrink-0"><LogoIcon className="w-5 h-5 text-slate-900" /></div>}
+                            <div className={`max-w-md lg:max-w-lg p-3 rounded-2xl ${
+                                msg.role === 'user' 
+                                ? 'bg-gradient-to-br from-amber-500 to-orange-600 text-white rounded-br-none' 
+                                : 'bg-slate-700 text-slate-200 rounded-bl-none'
+                            }`}>
+                                <div className="text-sm prose prose-invert max-w-none prose-p:my-2" dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.parts[0].text) }} />
+                            </div>
                         </div>
-                    </div>
-                )}
+                    );
+                })}
                  <div ref={chatEndRef} />
             </div>
             

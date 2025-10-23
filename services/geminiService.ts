@@ -1,5 +1,6 @@
-import { GoogleGenAI, Part, Type, Content, GenerateContentResponse, GroundingChunk } from "@google/genai";
+import { GoogleGenAI, Part, Type, GenerateContentResponse, GroundingChunk, Modality } from "@google/genai";
 import { ApiKeyError } from '../utils/errors';
+import { FitnessLevel, Goal } from "../hooks/useUserPreferences";
 
 type ProgressCallback = (attempt: number, maxAttempts: number) => void;
 
@@ -53,6 +54,11 @@ export const analyzeVideoWithFrames = async (
             lastError = e instanceof Error ? e : new Error(String(e));
             
             const errorMessage = lastError.message.toLowerCase();
+
+            if (errorMessage.includes("api key not valid")) {
+                 throw new ApiKeyError("Your API key is not valid. Please select a new one.");
+            }
+
             // Only retry for 503/overloaded/unavailable errors
             if ((errorMessage.includes("503") || errorMessage.includes("overloaded") || errorMessage.includes("unavailable")) && attempt < MAX_RETRIES) {
                 onProgress?.(attempt, MAX_RETRIES);
@@ -95,16 +101,41 @@ export type WorkoutPlan = WorkoutDay[];
 /**
  * Generates a structured workout plan in JSON format based on a list of available equipment.
  * @param equipmentList A comma-separated string of available gym equipment.
+ * @param fitnessLevel The user's self-reported fitness level.
+ * @param goal The user's primary fitness goal.
  * @param onProgress A callback function to report retry progress.
+ * @param isRegeneration A boolean to indicate if this is a request for a new plan variation.
  * @returns A promise that resolves to a WorkoutPlan object.
  */
-export const generateWorkoutPlan = async (equipmentList: string, onProgress?: ProgressCallback): Promise<WorkoutPlan> => {
+export const generateWorkoutPlan = async (
+    equipmentList: string, 
+    fitnessLevel: FitnessLevel,
+    goal: Goal,
+    onProgress?: ProgressCallback, 
+    isRegeneration = false
+): Promise<WorkoutPlan> => {
     if (!process.env.API_KEY) {
         throw new Error("API_KEY environment variable is not set.");
     }
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-    const prompt = `You are an expert fitness planner. Based on the following available gym equipment, create a 3-day full-body workout split plan designed for an intermediate user. The plan should ensure each major muscle group is worked effectively and has at least 48 hours of rest. Format the response as a JSON array. Each object in the array should represent a workout day and must have two properties: 'day' (a string like 'Day 1') and 'exercises' (an array of exercise objects). Each exercise object must have 'name', 'sets', and 'reps' string properties. Available equipment: ${equipmentList}`;
+    const regenerationInstruction = isRegeneration
+        ? " A previous plan was generated. Please create a DIFFERENT variation of the workout plan, ensuring it's still effective and balanced. Be creative."
+        : "";
+
+    const prompt = `You are an expert fitness planner. Based on the user's profile and the available equipment, create a 3-day full-body workout split plan.
+    
+    **User Profile:**
+    - Fitness Level: ${fitnessLevel}
+    - Primary Goal: ${goal}
+
+    **Available Equipment:** ${equipmentList}
+    
+    **Instructions:**
+    - Tailor the exercises, sets, and reps to the user's fitness level and goal.
+    - The plan should ensure each major muscle group is worked effectively and has at least 48 hours of rest.
+    - ${regenerationInstruction}
+    - Format the response as a JSON array. Each object in the array should represent a workout day and must have two properties: 'day' (a string like 'Day 1') and 'exercises' (an array of exercise objects). Each exercise object must have 'name', 'sets', and 'reps' string properties.`;
 
     const MAX_RETRIES = 3;
     let lastError: Error | null = null;
@@ -269,6 +300,14 @@ export const getGroundedAnswer = async (
             },
         });
 
+        if (!response.text?.trim()) {
+            const finishReason = response.candidates?.[0]?.finishReason;
+            if (finishReason === 'SAFETY') {
+                 throw new Error("The question could not be answered due to safety filters. Please try rephrasing your question.");
+            }
+            throw new Error("The AI returned an empty answer. This may be a temporary issue, please try again.");
+        }
+
         const sources = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
         return { text: response.text, sources: sources };
 
@@ -314,17 +353,74 @@ export const analyzePose = async (
     }
 };
 
+// New function for image editing
+export const editImage = async (
+    prompt: string,
+    base64Image: string,
+    mimeType: string
+): Promise<string> => {
+    if (!process.env.API_KEY) {
+        throw new Error("API_KEY environment variable is not set.");
+    }
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
+    const imagePart: Part = {
+        inlineData: {
+            data: base64Image,
+            mimeType: mimeType
+        }
+    };
+
+    const textPart: Part = {
+        text: prompt
+    };
+
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash-image',
+            contents: { parts: [imagePart, textPart] },
+            config: {
+                responseModalities: [Modality.IMAGE],
+            },
+        });
+        
+        const editedImagePart = response.candidates?.[0]?.content?.parts?.find(part => part.inlineData);
+        if (editedImagePart && editedImagePart.inlineData) {
+            return editedImagePart.inlineData.data;
+        } else {
+            const finishReason = response.candidates?.[0]?.finishReason;
+            if (finishReason === 'SAFETY') {
+                 throw new Error('The editing request was blocked due to safety policies. Please try a different prompt.');
+            }
+            throw new Error("The AI did not return an edited image. The model might not have been able to fulfill the request.");
+        }
+    } catch (e) {
+        console.error(`Error editing image:`, e);
+        const error = e instanceof Error ? e : new Error(String(e));
+        if (error.message.toLowerCase().includes('safety')) {
+            throw new Error('The editing request was blocked due to safety policies. Please try a different prompt.');
+        }
+        throw new Error(`Failed to edit image with Gemini API: ${error.message}`);
+    }
+};
+
 
 // New function for chat. It takes the history and sends it for a streaming response.
 export const getChatResponseStream = (
-    history: Content[]
+    history: any[]
 ): Promise<AsyncGenerator<GenerateContentResponse>> => {
      if (!process.env.API_KEY) {
         throw new Error("API_KEY environment variable is not set.");
     }
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     
-    const systemInstruction = "You are Reddy, a friendly and encouraging AI fitness coach. Your goal is to help users with their fitness questions, provide motivation, and offer safe, general advice. Do not provide medical advice. Keep your answers concise and easy to understand. Use Markdown for formatting if it helps clarity.";
+    const systemInstruction = `You are Reddy, a friendly, positive, and super-encouraging AI fitness coach. Your primary role is to motivate and support users on their fitness journey.
+
+**Your Core Directives:**
+- **Motivate:** Always be encouraging. Start conversations with a warm welcome and sprinkle motivational phrases throughout your responses.
+- **Advise Safely:** Provide general fitness advice. Focus on topics like exercise principles (e.g., progressive overload), nutrition basics (e.g., macronutrients), workout routine ideas, and goal-setting strategies.
+- **Keep it Clear:** Explain concepts clearly and concisely. Use Markdown (like lists and bold text) to make your advice easy to digest.
+- **STRICTLY NO MEDICAL ADVICE:** This is critical. If a user asks about injuries, pain, specific health conditions, supplements, or anything that could be considered medical advice, you MUST politely decline and strongly recommend they consult a qualified healthcare professional. For example, say: "That's a great question, but it's best discussed with a doctor or physical therapist who can give you personalized advice."`;
 
     try {
         return ai.models.generateContentStream({
