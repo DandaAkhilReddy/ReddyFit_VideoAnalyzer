@@ -1,0 +1,5 @@
+{
+  "name": "Gemini Video Analyzer Pro",
+  "description": "Upload a video and provide a prompt to receive a detailed analysis using Gemini 2.5 Pro's advanced video understanding and thinking capabilities.",
+  "requestFramePermissions": []
+}
